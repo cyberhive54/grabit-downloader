@@ -12,6 +12,9 @@ Preferred communication style: Simple, everyday language.
 - Enhanced Twitter/X support to handle posts without videos
 - Show appropriate responses for posts with images or no media
 - Display media type badges and handle different content types
+- Added comprehensive YouTube content type support analysis
+- Implemented better error handling for unsupported YouTube content types
+- Added web scraping fallback for Twitter image extraction
 
 ## System Architecture
 

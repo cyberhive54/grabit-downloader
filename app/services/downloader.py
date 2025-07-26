@@ -38,10 +38,38 @@ class VideoDownloaderService:
             'socket_timeout': settings.DOWNLOAD_TIMEOUT,
         }
     
+    def _detect_youtube_content_type(self, url: str) -> str:
+        """Detect YouTube content type from URL"""
+        url_lower = url.lower()
+        
+        if '/post/' in url_lower:
+            return "community_post"
+        elif '/playlist' in url_lower:
+            return "playlist" 
+        elif '/shorts/' in url_lower:
+            return "short"
+        elif '/watch' in url_lower or 'youtu.be/' in url_lower:
+            return "video"
+        elif '/channel/' in url_lower or '/c/' in url_lower or '/user/' in url_lower:
+            return "channel"
+        elif '/live/' in url_lower:
+            return "live_stream"
+        else:
+            return "unknown"
+    
     async def extract_metadata(self, url: str) -> ExtractResponse:
         """
         Extract video metadata without downloading
         """
+        # Check for YouTube content types that are known to be unsupported
+        if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
+            content_type = self._detect_youtube_content_type(url)
+            if content_type == "community_post":
+                return ExtractResponse(
+                    status="error",
+                    message="YouTube Community posts are not supported. This API only supports video content (regular videos, shorts, playlists). Community posts contain text, images, or polls which cannot be downloaded."
+                )
+        
         try:
             ydl_opts = self._get_base_ydl_opts()
             
@@ -107,10 +135,34 @@ class VideoDownloaderService:
             
         except yt_dlp.DownloadError as e:
             logger.error(f"yt-dlp download error for {url}: {str(e)}")
-            return ExtractResponse(
-                status="error",
-                message=f"Download error: {str(e)}"
-            )
+            
+            # Provide more helpful error messages for common YouTube issues
+            error_msg = str(e)
+            if "This channel does not have a" in error_msg and "tab" in error_msg:
+                return ExtractResponse(
+                    status="error",
+                    message="YouTube Community posts are not supported. This API only supports video content (regular videos, shorts, playlists). Community posts contain text, images, or polls which cannot be downloaded."
+                )
+            elif "Private video" in error_msg or "private" in error_msg.lower():
+                return ExtractResponse(
+                    status="error", 
+                    message="This video is private and cannot be accessed. Only public, unlisted, or your own private videos can be downloaded."
+                )
+            elif "Members-only" in error_msg or "premium" in error_msg.lower():
+                return ExtractResponse(
+                    status="error",
+                    message="This content requires channel membership or premium access, which is not supported."
+                )
+            elif "Age-restricted" in error_msg:
+                return ExtractResponse(
+                    status="error",
+                    message="Age-restricted content may require authentication. Try with a direct video URL if available."
+                )
+            else:
+                return ExtractResponse(
+                    status="error",
+                    message=f"Download error: {str(e)}"
+                )
         except Exception as e:
             logger.error(f"Unexpected error extracting metadata for {url}: {str(e)}")
             return ExtractResponse(

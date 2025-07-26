@@ -407,6 +407,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "python-multipart" },
+    { name = "requests" },
     { name = "uvicorn" },
     { name = "yt-dlp", extra = ["default"] },
 ]
@@ -417,6 +418,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116.1" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "uvicorn", specifier = ">=0.35.0" },
     { name = "yt-dlp", extras = ["default"], specifier = ">=2025.7.21" },
 ]

@@ -5,9 +5,11 @@ Core downloader service using yt-dlp
 import os
 import asyncio
 import logging
+import re
 from typing import Dict, Any, Optional
 from pathlib import Path
 import yt_dlp
+import requests
 
 from config import settings
 from app.models import VideoMetadata, VideoFormat, ExtractResponse, DownloadResponse
@@ -135,15 +137,31 @@ class VideoDownloaderService:
                         return ydl.extract_info(url, download=False)
                     except yt_dlp.DownloadError as e:
                         if "No video could be found" in str(e):
-                            # Try to extract general post info using different approach
-                            ydl_opts_general = ydl_opts.copy()
-                            ydl_opts_general['ignoreerrors'] = True
+                            # For image-only posts, try a different approach
                             try:
-                                # Try to get tweet info even without video
-                                import requests
-                                from urllib.parse import urlparse
+                                # Use a more permissive configuration
+                                ydl_opts_image = self._get_base_ydl_opts()
+                                ydl_opts_image.update({
+                                    'skip_download': True,
+                                    'extract_flat': False,
+                                    'ignoreerrors': True,
+                                    'no_warnings': True,
+                                    'writeinfojson': False,
+                                    'write_all_thumbnails': False,
+                                    'writethumbnail': False,
+                                    'format': 'worst',  # Try to get any available format
+                                })
                                 
-                                # Extract tweet ID from URL
+                                with yt_dlp.YoutubeDL(ydl_opts_image) as ydl_img:
+                                    try:
+                                        info = ydl_img.extract_info(url, download=False)
+                                        if info:
+                                            return info
+                                    except:
+                                        pass
+                                
+                                # If still no luck, create basic structure with tweet ID
+                                from urllib.parse import urlparse
                                 path_parts = urlparse(url).path.split('/')
                                 tweet_id = None
                                 for i, part in enumerate(path_parts):
@@ -152,17 +170,19 @@ class VideoDownloaderService:
                                         break
                                 
                                 if tweet_id:
-                                    # Return basic structure for posts without video
+                                    # Create minimal info structure for image posts
                                     return {
                                         'id': tweet_id,
                                         'title': f'Twitter Post {tweet_id}',
                                         'webpage_url': url,
                                         'extractor': 'twitter',
                                         'formats': [],
+                                        'thumbnails': [],
                                         '_type': 'url',
-                                        'description': 'This post contains no video content'
+                                        'description': 'Twitter post - may contain images'
                                     }
-                            except:
+                            except Exception as inner_e:
+                                logger.warning(f"Failed image extraction fallback: {inner_e}")
                                 pass
                         raise e
             
@@ -204,12 +224,37 @@ class VideoDownloaderService:
                     formats.append(video_format)
                     media_type = "video"
             
-            # Check for images
+            # Check for images from multiple sources
             thumbnails = info.get('thumbnails', [])
+            images = []
+            
             if thumbnails:
-                images = [thumb.get('url') for thumb in thumbnails if thumb.get('url')]
-                if images and media_type == "none":
-                    media_type = "image"
+                images.extend([thumb.get('url') for thumb in thumbnails if thumb.get('url')])
+            
+            # For Twitter, also check additional image fields
+            if 'twitter' in info.get('extractor', '').lower():
+                # Check for entries (Twitter sometimes provides multiple media entries)
+                entries = info.get('entries', [])
+                for entry in entries:
+                    entry_thumbs = entry.get('thumbnails', [])
+                    images.extend([thumb.get('url') for thumb in entry_thumbs if thumb.get('url')])
+                
+                # Check for any image URLs in the info structure
+                if 'url' in info and any(ext in info['url'].lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                    images.append(info['url'])
+            
+            # Remove duplicates and filter valid URLs
+            images = list(dict.fromkeys([img for img in images if img and isinstance(img, str)]))
+            
+            # If no images found through yt-dlp and this is a Twitter post, try web scraping fallback
+            if not images and 'twitter' in info.get('extractor', '').lower():
+                try:
+                    images = await self._extract_twitter_images_fallback(url)
+                except Exception as fallback_error:
+                    logger.warning(f"Twitter image fallback failed: {fallback_error}")
+            
+            if images and media_type == "none":
+                media_type = "image"
             
             # Determine appropriate message
             if media_type == "video":
@@ -324,6 +369,70 @@ class VideoDownloaderService:
                 file_size=None,
                 message=f"Unexpected error: {str(e)}"
             )
+    
+    async def _extract_twitter_images_fallback(self, url: str) -> list:
+        """
+        Fallback method to extract Twitter images using web scraping when yt-dlp fails
+        """
+        try:
+            # Make a request to get the Twitter page HTML
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None, 
+                lambda: requests.get(url, headers=headers, timeout=10)
+            )
+            
+            if response.status_code != 200:
+                return []
+            
+            html_content = response.text
+            
+            # Look for image URLs in the HTML using regex patterns
+            image_patterns = [
+                r'https://pbs\.twimg\.com/media/[^"]+\.(jpg|jpeg|png|webp)',
+                r'https://ton\.twitter\.com/[^"]+\.(jpg|jpeg|png|webp)', 
+                r'https://video\.twimg\.com/[^"]+\.(jpg|jpeg|png|webp)',
+            ]
+            
+            images = []
+            for pattern in image_patterns:
+                matches = re.findall(pattern, html_content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, tuple):
+                        # Extract the full URL (match[0] would be the URL without extension)
+                        full_match = re.search(pattern, html_content, re.IGNORECASE)
+                        if full_match:
+                            images.append(full_match.group(0))
+                    else:
+                        images.append(match)
+            
+            # Remove duplicates and return high-quality versions
+            unique_images = list(dict.fromkeys(images))
+            
+            # Prefer larger image sizes
+            quality_images = []
+            for img in unique_images:
+                # Convert to larger size if possible
+                if ':small' in img:
+                    img = img.replace(':small', ':large')
+                elif ':medium' in img:
+                    img = img.replace(':medium', ':large')
+                elif '?format=' in img and '&name=' in img:
+                    # For newer Twitter image URLs, try to get the original size
+                    img = re.sub(r'&name=\w+', '&name=orig', img)
+                
+                quality_images.append(img)
+            
+            logger.info(f"Extracted {len(quality_images)} images via fallback method for {url}")
+            return quality_images
+            
+        except Exception as e:
+            logger.error(f"Twitter image fallback extraction failed: {e}")
+            return []
     
     async def download_video(self, url: str, format_id: str) -> DownloadResponse:
         """

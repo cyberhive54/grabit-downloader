@@ -125,6 +125,8 @@ class VideoDownloaderService:
             ydl_opts['extract_flat'] = False
             ydl_opts['writeinfojson'] = True
             ydl_opts['skip_download'] = True
+            ydl_opts['write_all_thumbnails'] = True  # Extract all available images/thumbnails
+            ydl_opts['writethumbnail'] = True
             
             def extract_info():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -251,6 +253,75 @@ class VideoDownloaderService:
             logger.error(f"Unexpected error extracting Twitter metadata for {url}: {str(e)}")
             return ExtractResponse(
                 status="error",
+                message=f"Unexpected error: {str(e)}"
+            )
+    
+    async def download_twitter_images(self, url: str) -> DownloadResponse:
+        """
+        Download images from Twitter/X post
+        """
+        try:
+            ydl_opts = self._get_base_ydl_opts()
+            ydl_opts['skip_download'] = True  # Skip video download
+            ydl_opts['write_all_thumbnails'] = True  # Download all images
+            ydl_opts['writethumbnail'] = True
+            ydl_opts['outtmpl'] = str(self.download_dir / 'images/%(title)s [%(id)s]/%(title)s.%(ext)s')
+            
+            downloaded_files = []
+            
+            def download_hook(d):
+                if d['status'] == 'finished':
+                    downloaded_files.append(d['filename'])
+                    logger.info(f"Downloaded image: {d['filename']}")
+            
+            ydl_opts['progress_hooks'] = [download_hook]
+            
+            def download():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    try:
+                        ydl.download([url])
+                    except yt_dlp.DownloadError as e:
+                        if "No video could be found" in str(e):
+                            # This is expected for image-only posts, yt-dlp still extracts thumbnails
+                            pass
+                        else:
+                            raise e
+            
+            # Run in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, download)
+            
+            # Check if any image files were downloaded
+            image_dir = self.download_dir / 'images'
+            if image_dir.exists():
+                image_files = list(image_dir.rglob('*'))
+                image_files = [f for f in image_files if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.webp']]
+                
+                if image_files:
+                    total_size = sum(f.stat().st_size for f in image_files)
+                    return DownloadResponse(
+                        status="ok",
+                        file_path=str(image_dir),
+                        filename=f"{len(image_files)} images downloaded",
+                        file_size=total_size,
+                        message=f"Downloaded {len(image_files)} images successfully"
+                    )
+            
+            return DownloadResponse(
+                status="error",
+                file_path=None,
+                filename=None,
+                file_size=None,
+                message="No images were found or downloaded from this post"
+            )
+            
+        except Exception as e:
+            logger.error(f"Unexpected error downloading Twitter images for {url}: {str(e)}")
+            return DownloadResponse(
+                status="error",
+                file_path=None,
+                filename=None, 
+                file_size=None,
                 message=f"Unexpected error: {str(e)}"
             )
     

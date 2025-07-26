@@ -14,6 +14,11 @@ class DownloadRequest(BaseModel):
     url: HttpUrl = Field(..., description="Video URL to download")
     format_id: str = Field(..., description="Format ID from metadata extraction")
 
+class ImageDownloadRequest(BaseModel):
+    """Request model for image download"""
+    url: HttpUrl = Field(..., description="Post URL to download images from")
+    download_all: bool = Field(default=True, description="Download all available images")
+
 class VideoFormat(BaseModel):
     """Video format information"""
     format_id: str = Field(..., description="Unique format identifier")

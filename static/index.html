@@ -146,6 +146,10 @@
                         <i class="fas fa-download"></i> Download Selected Format
                         <div class="spinner-border spinner-border-sm loading-spinner ms-2" role="status"></div>
                     </button>
+                    <button type="button" class="btn btn-info ms-2" id="downloadImagesBtn" style="display: none;">
+                        <i class="fas fa-images"></i> Download Images
+                        <div class="spinner-border spinner-border-sm loading-spinner ms-2" role="status"></div>
+                    </button>
                 </div>
             </div>
         </div>
@@ -343,11 +347,20 @@ curl -X POST "http://localhost:8000/api/download/youtube" \
                 `;
                 document.getElementById('downloadContainer').style.display = 'block';
                 document.getElementById('downloadBtn').style.display = 'none';
+                
+                // Show image download button for Twitter if metadata indicates images
+                const platform = document.getElementById('platform').value;
+                if (platform === 'twitter' && currentVideoData?.metadata?.media_type === 'image') {
+                    document.getElementById('downloadImagesBtn').style.display = 'inline-block';
+                } else {
+                    document.getElementById('downloadImagesBtn').style.display = 'none';
+                }
                 return;
             }
             
             // Show download button for video content
             document.getElementById('downloadBtn').style.display = 'block';
+            document.getElementById('downloadImagesBtn').style.display = 'none';
             
             // Group and sort formats
             const sortedFormats = formats
@@ -439,6 +452,50 @@ curl -X POST "http://localhost:8000/api/download/youtube" \
                     `);
                 } else {
                     showResult('error', data.message || 'Failed to download video');
+                }
+            } catch (error) {
+                showResult('error', `Network error: ${error.message}`);
+            } finally {
+                // Hide loading state
+                this.disabled = false;
+                spinner.style.display = 'none';
+            }
+        });
+
+        // Phase 2: Download images (Twitter only)
+        document.getElementById('downloadImagesBtn').addEventListener('click', async function() {
+            if (!currentVideoData) return;
+            
+            const url = document.getElementById('videoUrl').value;
+            const spinner = this.querySelector('.loading-spinner');
+            
+            // Show loading state
+            this.disabled = true;
+            spinner.style.display = 'inline-block';
+            
+            try {
+                const response = await fetch('/api/download/twitter/images', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        url: url,
+                        download_all: true
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    showResult('success', `
+                        <strong>Images downloaded!</strong><br>
+                        <strong>Files:</strong> ${data.filename}<br>
+                        <strong>Total Size:</strong> ${formatFileSize(data.file_size)}<br>
+                        <strong>Location:</strong> <code>${data.file_path}</code>
+                    `);
+                } else {
+                    showResult('error', data.message || 'Failed to download images');
                 }
             } catch (error) {
                 showResult('error', `Network error: ${error.message}`);

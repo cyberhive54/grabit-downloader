@@ -54,6 +54,12 @@ class VideoFormat(BaseModel):
     vbr: Optional[float] = Field(None, description="Video bitrate")
     abr: Optional[float] = Field(None, description="Audio bitrate")
     quality: Optional[float] = Field(None, description="Quality rating")
+    
+    # Enhanced format classification
+    format_type: Optional[str] = Field(None, description="Format type: 'audio-only', 'video-only', 'combined'")
+    format_category: Optional[str] = Field(None, description="Quality category: 'best', 'high', 'medium', 'low'")
+    visual_indicator: Optional[str] = Field(None, description="Visual indicator for frontend")
+    codec_info: Optional[str] = Field(None, description="Human-readable codec description")
 
 class VideoMetadata(BaseModel):
     """Complete video metadata"""

@@ -67,6 +67,30 @@
             font-weight: 500;
             margin-bottom: 1rem;
         }
+        
+        .format-type-indicator {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+        
+        .format-type-badge {
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+        
+        .quality-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+        }
+        
+        .quality-best { background-color: #28a745; }
+        .quality-high { background-color: #17a2b8; }
+        .quality-medium { background-color: #ffc107; }
+        .quality-low { background-color: #dc3545; }
+        .quality-unknown { background-color: #6c757d; }
     </style>
 </head>
 <body>
@@ -140,6 +164,33 @@
                 <div class="card-body">
                     <div class="mb-3">
                         <label class="form-label">Available Formats</label>
+                        
+                        <!-- Format Legend -->
+                        <div class="card mb-3" style="background-color: #f8f9fa;">
+                            <div class="card-body py-2">
+                                <h6 class="card-title mb-2" style="font-size: 0.9rem;">Format Type Indicators:</h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <small><span class="format-type-indicator">🎬</span>Combined (Video + Audio)</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small><span class="format-type-indicator">📹</span>Video Only</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small><span class="format-type-indicator">🎵</span>Audio Only</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small>
+                                            <span class="quality-indicator quality-best"></span>Best
+                                            <span class="quality-indicator quality-high"></span>High
+                                            <span class="quality-indicator quality-medium"></span>Medium
+                                            <span class="quality-indicator quality-low"></span>Low
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div id="formatsList"></div>
                     </div>
                     <button type="button" class="btn btn-success" id="downloadBtn" disabled>
@@ -378,23 +429,41 @@ curl -X POST "http://localhost:8000/api/download/youtube" \
                 formatCard.className = 'format-card';
                 formatCard.dataset.formatId = format.format_id;
                 
-                const resolution = format.height ? `${format.height}p` : 'Unknown';
+                const resolution = format.height ? `${format.height}p` : (format.format_type === 'audio-only' ? 'Audio' : 'Unknown');
                 const fileSize = formatFileSize(format.filesize || format.filesize_approx);
-                const codec = format.vcodec && format.vcodec !== 'none' ? format.vcodec : 'Audio only';
                 const fps = format.fps ? ` (${format.fps}fps)` : '';
+                
+                // Enhanced format classification
+                const visualIndicator = format.visual_indicator || '❓';
+                const formatType = format.format_type || 'unknown';
+                const formatCategory = format.format_category || 'unknown';
+                const codecInfo = format.codec_info || 'Unknown';
+                
+                // Quality indicator
+                const qualityClass = `quality-${formatCategory}`;
+                
+                // Format type badge color
+                let badgeClass = 'bg-secondary';
+                if (formatType === 'combined') badgeClass = 'bg-success';
+                else if (formatType === 'video-only') badgeClass = 'bg-primary';
+                else if (formatType === 'audio-only') badgeClass = 'bg-warning';
                 
                 formatCard.innerHTML = `
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <strong>${format.format_note || resolution}${fps}</strong>
-                            <br>
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="format-type-indicator">${visualIndicator}</span>
+                                <strong>${format.format_note || resolution}${fps}</strong>
+                                <span class="quality-indicator ${qualityClass}"></span>
+                                <span class="badge ${badgeClass} format-type-badge">${formatType.replace('-', ' ').toUpperCase()}</span>
+                            </div>
                             <small class="text-muted">
-                                ${format.ext.toUpperCase()} • ${codec} • ${fileSize}
-                                ${format.abr ? ` • ${format.abr}kbps audio` : ''}
+                                ${format.ext.toUpperCase()} • ${codecInfo} • ${fileSize}
+                                ${format.abr ? ` • ${format.abr}kbps` : ''}
                             </small>
                         </div>
                         <div class="text-end">
-                            <span class="badge bg-primary">${format.format_id}</span>
+                            <span class="badge bg-dark">${format.format_id}</span>
                         </div>
                     </div>
                 `;

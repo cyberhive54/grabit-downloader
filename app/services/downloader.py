@@ -44,6 +44,88 @@ class VideoDownloaderService:
             'socket_timeout': settings.DOWNLOAD_TIMEOUT,
         }
     
+    def _classify_format(self, fmt: dict) -> dict:
+        """
+        Classify yt-dlp format based on vcodec and acodec values
+        Returns classification data for enhanced frontend display
+        """
+        vcodec = fmt.get('vcodec')
+        acodec = fmt.get('acodec')
+        height = fmt.get('height') or 0  # Handle None values properly
+        format_note = fmt.get('format_note', '').lower()
+        
+        # Determine format type based on codec presence
+        if vcodec and vcodec != 'none' and acodec and acodec != 'none':
+            format_type = "combined"
+            visual_indicator = "🎬"  # Video + Audio
+        elif vcodec and vcodec != 'none' and (not acodec or acodec == 'none'):
+            format_type = "video-only"
+            visual_indicator = "📹"  # Video only
+        elif acodec and acodec != 'none' and (not vcodec or vcodec == 'none'):
+            format_type = "audio-only"
+            visual_indicator = "🎵"  # Audio only
+        else:
+            format_type = "unknown"
+            visual_indicator = "❓"
+        
+        # Determine quality category based on resolution
+        if height and height >= 1080:
+            format_category = "best"
+        elif height and height >= 720:
+            format_category = "high"
+        elif height and height >= 480:
+            format_category = "medium"
+        elif height and height > 0:
+            format_category = "low"
+        elif format_type == "audio-only":
+            # For audio, use bitrate to determine quality
+            abr = fmt.get('abr') or 0  # Handle None values properly
+            if abr >= 256:
+                format_category = "best"
+            elif abr >= 192:
+                format_category = "high"
+            elif abr >= 128:
+                format_category = "medium"
+            else:
+                format_category = "low"
+        else:
+            format_category = "unknown"
+        
+        # Generate human-readable codec information
+        codec_parts = []
+        if vcodec and vcodec != 'none':
+            if 'av01' in vcodec:
+                codec_parts.append("AV1")
+            elif 'vp9' in vcodec:
+                codec_parts.append("VP9")
+            elif 'h264' in vcodec or 'avc1' in vcodec:
+                codec_parts.append("H.264")
+            elif 'h265' in vcodec or 'hevc' in vcodec:
+                codec_parts.append("H.265")
+            else:
+                codec_parts.append(vcodec.upper()[:8])
+        
+        if acodec and acodec != 'none':
+            if 'opus' in acodec:
+                codec_parts.append("Opus")
+            elif 'aac' in acodec:
+                codec_parts.append("AAC")
+            elif 'mp3' in acodec:
+                codec_parts.append("MP3")
+            elif 'vorbis' in acodec:
+                codec_parts.append("Vorbis")
+            else:
+                codec_parts.append(acodec.upper()[:6])
+        
+        codec_info = " + ".join(codec_parts) if codec_parts else "Unknown"
+        
+        return {
+            "format_type": format_type,
+            "format_category": format_category,
+            "visual_indicator": visual_indicator,
+            "codec_info": codec_info
+        }
+    
     def _detect_youtube_content_type(self, url: str) -> str:
         """Detect YouTube content type from URL"""
         url_lower = url.lower()
@@ -71,9 +153,7 @@ class VideoDownloaderService:
         if 'youtube.com' in url.lower() or 'youtu.be' in url.lower():
             content_type = self._detect_youtube_content_type(url)
             if content_type == "community_post":
-                return ExtractResponse(
-                    status="error",
-                    message="YouTube Community posts are not supported. This API only supports video content (regular videos, shorts, playlists). Community posts contain text, images, or polls which cannot be downloaded."
+                return ExtractResponse(status="error", metadata=None, message="YouTube Community posts are not supported. This API only supports video content (regular videos, shorts, playlists). Community posts contain text, images, or polls which cannot be downloaded."
                 )
         
         try:
@@ -89,9 +169,7 @@ class VideoDownloaderService:
             info = await loop.run_in_executor(None, extract_info)
             
             if not info:
-                return ExtractResponse(
-                    status="error",
-                    message="Could not extract video information"
+                return ExtractResponse(status="error", metadata=None, message="Could not extract video information"
                 )
             
             # Check for live streams
@@ -100,6 +178,9 @@ class VideoDownloaderService:
             # Process formats
             formats = []
             for fmt in info.get('formats', []):
+                # Enhanced format classification
+                format_classification = self._classify_format(fmt)
+                
                 video_format = VideoFormat(
                     format_id=fmt.get('format_id', ''),
                     format_note=fmt.get('format_note'),
@@ -115,7 +196,8 @@ class VideoDownloaderService:
                     tbr=fmt.get('tbr'),
                     vbr=fmt.get('vbr'),
                     abr=fmt.get('abr'),
-                    quality=fmt.get('quality')
+                    quality=fmt.get('quality'),
+                    **format_classification
                 )
                 formats.append(video_format)
             
@@ -133,8 +215,11 @@ class VideoDownloaderService:
                 webpage_url=info.get('webpage_url', url),
                 formats=formats,
                 media_type="live" if is_live else ("video" if formats else "none"),
+                images=None,
                 has_media=bool(formats),
-                is_live=is_live
+                is_live=is_live,
+                playlist_count=None,
+                entries=None
             )
             
             return ExtractResponse(
@@ -149,35 +234,23 @@ class VideoDownloaderService:
             # Provide more helpful error messages for common YouTube issues
             error_msg = str(e)
             if "This channel does not have a" in error_msg and "tab" in error_msg:
-                return ExtractResponse(
-                    status="error",
-                    message="YouTube Community posts are not supported. This API only supports video content (regular videos, shorts, playlists). Community posts contain text, images, or polls which cannot be downloaded."
+                return ExtractResponse(status="error", metadata=None, message="YouTube Community posts are not supported. This API only supports video content (regular videos, shorts, playlists). Community posts contain text, images, or polls which cannot be downloaded."
                 )
             elif "Private video" in error_msg or "private" in error_msg.lower():
-                return ExtractResponse(
-                    status="error", 
-                    message="This video is private and cannot be accessed. Only public, unlisted, or your own private videos can be downloaded."
+                return ExtractResponse(status="error", metadata=None, message="This video is private and cannot be accessed. Only public, unlisted, or your own private videos can be downloaded."
                 )
             elif "Members-only" in error_msg or "premium" in error_msg.lower():
-                return ExtractResponse(
-                    status="error",
-                    message="This content requires channel membership or premium access, which is not supported."
+                return ExtractResponse(status="error", metadata=None, message="This content requires channel membership or premium access, which is not supported."
                 )
             elif "Age-restricted" in error_msg:
-                return ExtractResponse(
-                    status="error",
-                    message="Age-restricted content may require authentication. Try with a direct video URL if available."
+                return ExtractResponse(status="error", metadata=None, message="Age-restricted content may require authentication. Try with a direct video URL if available."
                 )
             else:
-                return ExtractResponse(
-                    status="error",
-                    message=f"Download error: {str(e)}"
+                return ExtractResponse(status="error", metadata=None, message=f"Download error: {str(e)}"
                 )
         except Exception as e:
             logger.error(f"Unexpected error extracting metadata for {url}: {str(e)}")
-            return ExtractResponse(
-                status="error",
-                message=f"Unexpected error: {str(e)}"
+            return ExtractResponse(status="error", metadata=None, message=f"Unexpected error: {str(e)}"
             )
     
     async def extract_twitter_metadata(self, url: str) -> ExtractResponse:
@@ -253,9 +326,7 @@ class VideoDownloaderService:
             info = await loop.run_in_executor(None, extract_info)
             
             if not info:
-                return ExtractResponse(
-                    status="error",
-                    message="Could not extract post information"
+                return ExtractResponse(status="error", metadata=None, message="Could not extract post information"
                 )
             
             # Process formats (if any)
@@ -352,15 +423,11 @@ class VideoDownloaderService:
             
         except yt_dlp.DownloadError as e:
             logger.error(f"yt-dlp download error for {url}: {str(e)}")
-            return ExtractResponse(
-                status="error",
-                message=f"Could not extract post information: {str(e)}"
+            return ExtractResponse(status="error", metadata=None, message=f"Could not extract post information: {str(e)}"
             )
         except Exception as e:
             logger.error(f"Unexpected error extracting Twitter metadata for {url}: {str(e)}")
-            return ExtractResponse(
-                status="error",
-                message=f"Unexpected error: {str(e)}"
+            return ExtractResponse(status="error", metadata=None, message=f"Unexpected error: {str(e)}"
             )
     
     async def download_twitter_images(self, url: str) -> DownloadResponse:
@@ -533,9 +600,7 @@ class VideoDownloaderService:
             await loop.run_in_executor(None, download)
             
             if not downloaded_files:
-                return DownloadResponse(
-                    status="error",
-                    message="No files were downloaded"
+                return DownloadResponse(status="error", file_path=None, filename=None, file_size=None, message="No files were downloaded"
                 )
             
             # Get info about the downloaded file
@@ -554,15 +619,11 @@ class VideoDownloaderService:
             
         except yt_dlp.DownloadError as e:
             logger.error(f"yt-dlp download error for {url} (format: {format_id}): {str(e)}")
-            return DownloadResponse(
-                status="error",
-                message=f"Download error: {str(e)}"
+            return DownloadResponse(status="error", file_path=None, filename=None, file_size=None, message=f"Download error: {str(e)}"
             )
         except Exception as e:
             logger.error(f"Unexpected error downloading {url}: {str(e)}")
-            return DownloadResponse(
-                status="error",
-                message=f"Unexpected error: {str(e)}"
+            return DownloadResponse(status="error", file_path=None, filename=None, file_size=None, message=f"Unexpected error: {str(e)}"
             )
 
     async def extract_playlist_metadata(self, url: str) -> ExtractResponse:
@@ -584,16 +645,12 @@ class VideoDownloaderService:
             info = await loop.run_in_executor(None, extract_info)
             
             if not info:
-                return ExtractResponse(
-                    status="error",
-                    message="Could not extract playlist information"
+                return ExtractResponse(status="error", metadata=None, message="Could not extract playlist information"
                 )
             
             # Check if it's actually a playlist
             if 'entries' not in info:
-                return ExtractResponse(
-                    status="error",
-                    message="URL does not appear to be a playlist"
+                return ExtractResponse(status="error", metadata=None, message="URL does not appear to be a playlist"
                 )
             
             entries = []
@@ -632,9 +689,7 @@ class VideoDownloaderService:
             
         except Exception as e:
             logger.error(f"Error extracting playlist metadata: {str(e)}")
-            return ExtractResponse(
-                status="error",
-                message=f"Playlist extraction failed: {str(e)}"
+            return ExtractResponse(status="error", metadata=None, message=f"Playlist extraction failed: {str(e)}"
             )
     
     async def download_playlist(self, url: str, max_downloads: Optional[int] = None, 
@@ -691,6 +746,9 @@ class VideoDownloaderService:
             
             return DownloadResponse(
                 status="success",
+                file_path=None,
+                filename=None,
+                file_size=None,
                 message=f"Playlist download completed: {success_count} successful, {error_count} failed",
                 download_type="playlist",
                 files_downloaded=downloaded_files,
@@ -703,7 +761,15 @@ class VideoDownloaderService:
             logger.error(f"Error downloading playlist: {str(e)}")
             return DownloadResponse(
                 status="error",
-                message=f"Playlist download failed: {str(e)}"
+                file_path=None,
+                filename=None,
+                file_size=None,
+                message=f"Playlist download failed: {str(e)}",
+                download_type="playlist",
+                files_downloaded=None,
+                total_files=None,
+                success_count=None,
+                error_count=None
             )
     
     async def batch_download(self, urls: List[str], format_preference: str = "best",
@@ -769,6 +835,9 @@ class VideoDownloaderService:
             
             return DownloadResponse(
                 status="success",
+                file_path=None,
+                filename=None,
+                file_size=None,
                 message=f"Batch download completed: {success_count} successful, {error_count} failed",
                 download_type="batch",
                 files_downloaded=downloaded_files,
@@ -781,7 +850,15 @@ class VideoDownloaderService:
             logger.error(f"Error in batch download: {str(e)}")
             return DownloadResponse(
                 status="error",
-                message=f"Batch download failed: {str(e)}"
+                file_path=None,
+                filename=None,
+                file_size=None,
+                message=f"Batch download failed: {str(e)}",
+                download_type="batch",
+                files_downloaded=None,
+                total_files=None,
+                success_count=None,
+                error_count=None
             )
 
 # Global service instance

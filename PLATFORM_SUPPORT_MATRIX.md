@@ -10,13 +10,23 @@ This document outlines all supported content types across different platforms us
 ### ✅ **Fully Supported (No Login Required)**
 | Content Type | Description | Quality Options | Notes |
 |--------------|-------------|-----------------|-------|
-| **Regular Videos** | Public videos | 144p to 8K/4K | All formats: MP4, WebM, etc. |
-| **YouTube Shorts** | Short-form videos | Up to 1080p | Full metadata extraction |
-| **Public Playlists** | Downloadable playlists | Varies by video | Batch download support |
+| **Regular Videos** | Public videos | All available formats | yt-dlp handles format detection |
+| **YouTube Shorts** | Short-form videos | All available formats | Standard video extraction |
 | **Unlisted Videos** | Videos with direct links | All available | Requires direct URL |
-| **Age-Restricted** | Most age-restricted content | All available | Some may require verification |
-| **Live Streams** | Ongoing broadcasts | Source quality | Experimental support |
-| **Audio Only** | Extract audio tracks | MP3, AAC, OGG | Various bitrates |
+| **Age-Restricted** | Most age-restricted content | All available | Handled by yt-dlp automatically |
+
+### ⚠️ **Limited/Experimental Support**
+| Content Type | Description | Limitations | Notes |
+|--------------|-------------|-------------|-------|
+| **Format Selection** | Choose video quality/format | Basic format picker | Limited quality filtering |
+
+### 🚧 **Planned Features (Not Yet Implemented)**
+| Content Type | Description | Status | Priority |
+|--------------|-------------|--------|----------|
+| **Public Playlists** | Downloadable playlists | Not implemented | High |
+| **Audio Only** | Extract audio tracks | Not implemented | High |
+| **Live Streams** | Ongoing broadcasts | Not implemented | Medium |
+| **Batch Downloads** | Multiple URLs at once | Not implemented | Medium |
 
 ### ❌ **Not Supported**
 | Content Type | Reason | Alternative |
@@ -34,15 +44,15 @@ This document outlines all supported content types across different platforms us
 ### ✅ **Fully Supported (No Login Required)**
 | Content Type | Description | Quality Options | Notes |
 |--------------|-------------|-----------------|-------|
-| **Public Posts** | Videos in feed posts | Up to 1080p | Single videos and carousels |
-| **Public Reels** | Short-form videos | Up to 1080p | Full metadata extraction |
-| **IGTV Videos** | Longer-form content | Up to 1080p | If publicly accessible |
-| **Story Highlights** | Saved public stories | Up to 1080p | Public accounts only |
+| **Public Posts** | Videos in feed posts | All available formats | Single videos only |
+| **Public Reels** | Short-form videos | All available formats | Standard extraction |
 
-### ⚠️ **Limited Support**
+### ⚠️ **Limited Support (Depends on yt-dlp)**
 | Content Type | Limitation | Requirements |
 |--------------|------------|--------------|
-| **Recent Stories** | May require login | Public accounts preferred |
+| **IGTV Videos** | No special handling | Public content only |
+| **Story Highlights** | Uncertain reliability | Public accounts only |
+| **Recent Stories** | May require login | Limited success |
 | **Newer Content** | Instagram's restrictions | May work intermittently |
 
 ### ❌ **Not Supported**
@@ -59,9 +69,13 @@ This document outlines all supported content types across different platforms us
 ### ✅ **Fully Supported (No Login Required)**
 | Content Type | Description | Quality Options | Notes |
 |--------------|-------------|-----------------|-------|
-| **Public Videos** | Videos in public posts | Up to 1080p | Public pages and profiles |
-| **Public Page Videos** | Business/creator content | Up to 1080p | Embedded or direct links |
-| **Shared Public Videos** | Publicly shared content | Varies | Must be public |
+| **Public Videos** | Videos in public posts | All available formats | Public pages and profiles |
+
+### ⚠️ **Limited Support (Depends on yt-dlp)**
+| Content Type | Limitation | Requirements |
+|--------------|------------|--------------|
+| **Public Page Videos** | No special handling | Public content only |
+| **Shared Public Videos** | Basic extraction | Must be public |
 
 ### ❌ **Not Supported**
 | Content Type | Reason |
@@ -165,12 +179,12 @@ The API supports 1000+ additional platforms through yt-dlp, including:
 
 ## 📊 **SUPPORT SUMMARY**
 
-| Platform | Public Videos | Private Content | Images | Live Streams | Special Features |
-|----------|---------------|-----------------|--------|--------------|------------------|
-| **YouTube** | ✅ Full | ❌ No | ❌ No | ⚠️ Limited | Playlist support |
-| **Instagram** | ✅ Full | ❌ No | ✅ Yes | ❌ No | Story highlights |
-| **Facebook** | ✅ Full | ❌ No | ⚠️ Limited | ❌ No | Page content |
-| **Twitter/X** | ✅ Full | ❌ No | ✅ Enhanced | ❌ No | Image fallback |
+| Platform | Public Videos | Private Content | Images | Playlists | Audio Extract | Special Features |
+|----------|---------------|-----------------|--------|-----------|---------------|------------------|
+| **YouTube** | ✅ Full | ❌ No | ❌ No | 🚧 Planned | 🚧 Planned | Community post detection |
+| **Instagram** | ✅ Full | ❌ No | ⚠️ Basic | ❌ No | ❌ No | Single video extraction |
+| **Facebook** | ✅ Full | ❌ No | ⚠️ Basic | ❌ No | ❌ No | Public content only |
+| **Twitter/X** | ✅ Full | ❌ No | ✅ Enhanced | ❌ No | ❌ No | Image fallback + web scraping |
 
 ---
 

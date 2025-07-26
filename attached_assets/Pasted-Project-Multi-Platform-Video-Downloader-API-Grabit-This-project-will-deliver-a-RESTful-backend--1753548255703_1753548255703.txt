@@ -1,0 +1,14 @@
+Project: Multi‑Platform Video Downloader API  {Grabit}
+This project will deliver a RESTful backend that lets any front end send a simple POST request and get back a downloaded video. We’ll use Python 3.10 or newer together with FastAPI for the web framework, yt‑dlp [{https://github.com/yt-dlp/yt-dlp}, research about it to know everything ] as the extraction engine, and Uvicorn or Gunicorn to serve the app.  
+
+The code lives under a single folder named video‑downloader‑backend. Inside you’ll find an app subfolder containing main.py and four platform modules—youtube.py, instagram.py, facebook.py, and twitter.py. Each of those modules defines its own FastAPI router and shared logic for accepting a URL and invoking yt‑dlp as a library. There’s also a static folder with an index.html page that shows live server status and includes a small form users can use to test the API.  
+
+We expose four endpoints: POST /download/youtube, POST /download/instagram, POST /download/facebook, and POST /download/twitter. Each expects a JSON body with a single url field. On success you’ll get back a JSON object with status set to ok and a file_path pointing to where yt‑dlp wrote the video. If something goes wrong you’ll receive status error and a message explaining what failed.  
+
+Under the hood each router module calls yt‑dlp’s Python API instead of shelling out. Downloads land in a configurable directory. We wrap everything in try/except blocks, log failures clearly, and enforce a consistent JSON response schema.  
+
+The index.html page lives in static and is served at the root path. It pings the server to confirm it’s running, lists all supported endpoints, and offers a simple AJAX form where you paste a URL, pick the platform, and see the JSON response right in your browser. No full‑page reloads needed.  
+
+In the README you’ll find a brief project overview, installation steps using pip install ‑r requirements.txt, instructions for running with uvicorn app.main:app --reload, sample curl commands to test each endpoint, and notes on configuring the download folder and timeouts. There’s also a troubleshooting section covering common errors and how to fix them.  
+
+By the time you’re done you’ll have a clean FastAPI service that any PHP, HTML, React, or Next.js front end can integrate with. You make one POST per site and get back exactly what you need to build a smooth video‑downloading experience.  

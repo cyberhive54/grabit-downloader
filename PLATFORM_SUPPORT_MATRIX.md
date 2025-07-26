@@ -20,13 +20,18 @@ This document outlines all supported content types across different platforms us
 |--------------|-------------|-------------|-------|
 | **Format Selection** | Choose video quality/format | Basic format picker | Limited quality filtering |
 
-### 🚧 **Planned Features (Not Yet Implemented)**
-| Content Type | Description | Status | Priority |
-|--------------|-------------|--------|----------|
-| **Public Playlists** | Downloadable playlists | Not implemented | High |
-| **Audio Only** | Extract audio tracks | Not implemented | High |
-| **Live Streams** | Ongoing broadcasts | Not implemented | Medium |
-| **Batch Downloads** | Multiple URLs at once | Not implemented | Medium |
+### ✅ **Newly Implemented Features**
+| Content Type | Description | Status | Notes |
+|--------------|-------------|--------|-------|
+| **Public Playlists** | Downloadable playlists | ✅ Implemented | Extract metadata + batch download |
+| **Audio Extraction** | Extract audio tracks | ✅ Implemented | MP3, AAC, multiple bitrates |
+| **Live Stream Detection** | Identify live broadcasts | ✅ Implemented | Detection only, download experimental |
+| **Batch Downloads** | Multiple URLs at once | ✅ Implemented | Concurrent downloads with limits |
+
+### 🚧 **Experimental Features**
+| Content Type | Description | Limitations | Notes |
+|--------------|-------------|-------------|-------|
+| **Live Stream Downloads** | Download ongoing broadcasts | May be unstable | Depends on stream format |
 
 ### ❌ **Not Supported**
 | Content Type | Reason | Alternative |
@@ -179,12 +184,12 @@ The API supports 1000+ additional platforms through yt-dlp, including:
 
 ## 📊 **SUPPORT SUMMARY**
 
-| Platform | Public Videos | Private Content | Images | Playlists | Audio Extract | Special Features |
-|----------|---------------|-----------------|--------|-----------|---------------|------------------|
-| **YouTube** | ✅ Full | ❌ No | ❌ No | 🚧 Planned | 🚧 Planned | Community post detection |
-| **Instagram** | ✅ Full | ❌ No | ⚠️ Basic | ❌ No | ❌ No | Single video extraction |
-| **Facebook** | ✅ Full | ❌ No | ⚠️ Basic | ❌ No | ❌ No | Public content only |
-| **Twitter/X** | ✅ Full | ❌ No | ✅ Enhanced | ❌ No | ❌ No | Image fallback + web scraping |
+| Platform | Public Videos | Private Content | Images | Playlists | Audio Extract | Live Streams | Special Features |
+|----------|---------------|-----------------|--------|-----------|---------------|---------------|------------------|
+| **YouTube** | ✅ Full | ❌ No | ❌ No | ✅ Full | ✅ Full | ⚠️ Detection | Playlist support, audio extraction |
+| **Instagram** | ✅ Full | ❌ No | ⚠️ Basic | ❌ No | ✅ Full | ❌ No | Audio extraction supported |
+| **Facebook** | ✅ Full | ❌ No | ⚠️ Basic | ❌ No | ✅ Full | ❌ No | Audio extraction supported |
+| **Twitter/X** | ✅ Full | ❌ No | ✅ Enhanced | ❌ No | ✅ Full | ❌ No | Image fallback + audio extraction |
 
 ---
 

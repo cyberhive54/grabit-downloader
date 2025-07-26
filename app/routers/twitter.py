@@ -33,12 +33,18 @@ async def extract_twitter_metadata(request: ExtractRequest):
 @router.post("/download/twitter", response_model=DownloadResponse)
 async def download_twitter_video(request: DownloadRequest):
     """
-    Download Twitter video with specific format
+    Download Twitter video with specific format, supports audio-only extraction
     """
-    logger.info(f"Downloading Twitter video: {request.url} (format: {request.format_id})")
+    logger.info(f"Downloading Twitter video: {request.url} (format: {request.format_id}, audio_only: {request.audio_only})")
     
     try:
-        response = await downloader_service.download_video(str(request.url), request.format_id)
+        response = await downloader_service.download_video(
+            str(request.url), 
+            request.format_id,
+            audio_only=request.audio_only,
+            audio_format=request.audio_format or "mp3",
+            audio_quality=request.audio_quality or "192"
+        )
         
         if response.status == "error":
             raise HTTPException(status_code=400, detail=response.message)

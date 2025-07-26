@@ -33,12 +33,18 @@ async def extract_instagram_metadata(request: ExtractRequest):
 @router.post("/download/instagram", response_model=DownloadResponse)
 async def download_instagram_video(request: DownloadRequest):
     """
-    Download Instagram video with specific format
+    Download Instagram video with specific format, supports audio-only extraction
     """
-    logger.info(f"Downloading Instagram video: {request.url} (format: {request.format_id})")
+    logger.info(f"Downloading Instagram video: {request.url} (format: {request.format_id}, audio_only: {request.audio_only})")
     
     try:
-        response = await downloader_service.download_video(str(request.url), request.format_id)
+        response = await downloader_service.download_video(
+            str(request.url), 
+            request.format_id,
+            audio_only=request.audio_only,
+            audio_format=request.audio_format or "mp3",
+            audio_quality=request.audio_quality or "192"
+        )
         
         if response.status == "error":
             raise HTTPException(status_code=400, detail=response.message)

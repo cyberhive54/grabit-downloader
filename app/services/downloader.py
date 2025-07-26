@@ -6,7 +6,7 @@ import os
 import asyncio
 import logging
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 import yt_dlp
 import requests
@@ -22,6 +22,12 @@ class VideoDownloaderService:
     def __init__(self):
         self.download_dir = Path(settings.DOWNLOAD_DIR)
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        # Create subdirectories for organization
+        (self.download_dir / "audio").mkdir(parents=True, exist_ok=True)
+        (self.download_dir / "playlists").mkdir(parents=True, exist_ok=True)
+        (self.download_dir / "playlists" / "audio").mkdir(parents=True, exist_ok=True)
+        (self.download_dir / "batch").mkdir(parents=True, exist_ok=True)
+        (self.download_dir / "batch" / "audio").mkdir(parents=True, exist_ok=True)
     
     def _get_base_ydl_opts(self) -> Dict[str, Any]:
         """Get base yt-dlp options"""
@@ -88,6 +94,9 @@ class VideoDownloaderService:
                     message="Could not extract video information"
                 )
             
+            # Check for live streams
+            is_live = info.get('is_live', False) or info.get('live_status') == 'is_live'
+            
             # Process formats
             formats = []
             for fmt in info.get('formats', []):
@@ -123,8 +132,9 @@ class VideoDownloaderService:
                 thumbnail=info.get('thumbnail'),
                 webpage_url=info.get('webpage_url', url),
                 formats=formats,
-                media_type="video" if formats else "none",
-                has_media=bool(formats)
+                media_type="live" if is_live else ("video" if formats else "none"),
+                has_media=bool(formats),
+                is_live=is_live
             )
             
             return ExtractResponse(
@@ -486,13 +496,24 @@ class VideoDownloaderService:
             logger.error(f"Twitter image fallback extraction failed: {e}")
             return []
     
-    async def download_video(self, url: str, format_id: str) -> DownloadResponse:
+    async def download_video(self, url: str, format_id: str, audio_only: bool = False, 
+                           audio_format: str = "mp3", audio_quality: str = "192") -> DownloadResponse:
         """
         Download video with specific format
         """
         try:
             ydl_opts = self._get_base_ydl_opts()
-            ydl_opts['format'] = format_id
+            
+            if audio_only:
+                ydl_opts.update({
+                    'format': 'bestaudio/best',
+                    'extractaudio': True,
+                    'audioformat': audio_format,
+                    'audioquality': audio_quality,
+                    'outtmpl': str(self.download_dir / 'audio/%(title)s [%(id)s].%(ext)s'),
+                })
+            else:
+                ydl_opts['format'] = format_id
             
             downloaded_files = []
             
@@ -527,7 +548,8 @@ class VideoDownloaderService:
                 file_path=file_path,
                 filename=filename,
                 file_size=file_stat.st_size,
-                message="Video downloaded successfully"
+                message="Video downloaded successfully" if not audio_only else "Audio extracted successfully",
+                download_type="audio" if audio_only else "video"
             )
             
         except yt_dlp.DownloadError as e:
@@ -541,6 +563,225 @@ class VideoDownloaderService:
             return DownloadResponse(
                 status="error",
                 message=f"Unexpected error: {str(e)}"
+            )
+
+    async def extract_playlist_metadata(self, url: str) -> ExtractResponse:
+        """
+        Extract playlist metadata without downloading videos
+        """
+        try:
+            ydl_opts = self._get_base_ydl_opts()
+            ydl_opts.update({
+                'extract_flat': True,  # Don't download videos, just get metadata
+                'playlistend': 50,     # Limit to first 50 videos for metadata extraction
+            })
+            
+            def extract_info():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, extract_info)
+            
+            if not info:
+                return ExtractResponse(
+                    status="error",
+                    message="Could not extract playlist information"
+                )
+            
+            # Check if it's actually a playlist
+            if 'entries' not in info:
+                return ExtractResponse(
+                    status="error",
+                    message="URL does not appear to be a playlist"
+                )
+            
+            entries = []
+            for entry in info.get('entries', [])[:50]:  # Limit entries for response size
+                if entry:
+                    entry_metadata = VideoMetadata(
+                        id=entry.get('id', ''),
+                        title=entry.get('title', 'Unknown'),
+                        description=entry.get('description'),
+                        uploader=entry.get('uploader'),
+                        upload_date=entry.get('upload_date'),
+                        duration=entry.get('duration'),
+                        view_count=entry.get('view_count'),
+                        thumbnail=entry.get('thumbnail'),
+                        webpage_url=entry.get('webpage_url', ''),
+                        media_type="video"
+                    )
+                    entries.append(entry_metadata)
+            
+            playlist_metadata = VideoMetadata(
+                id=info.get('id', ''),
+                title=info.get('title', 'Playlist'),
+                description=info.get('description'),
+                uploader=info.get('uploader'),
+                webpage_url=url,
+                media_type="playlist",
+                playlist_count=len(entries),
+                entries=entries
+            )
+            
+            return ExtractResponse(
+                status="success",
+                metadata=playlist_metadata,
+                message=f"Playlist metadata extracted: {len(entries)} videos found"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error extracting playlist metadata: {str(e)}")
+            return ExtractResponse(
+                status="error",
+                message=f"Playlist extraction failed: {str(e)}"
+            )
+    
+    async def download_playlist(self, url: str, max_downloads: Optional[int] = None, 
+                              start_index: int = 1, end_index: Optional[int] = None,
+                              audio_only: bool = False) -> DownloadResponse:
+        """
+        Download videos from a playlist
+        """
+        try:
+            # Create playlist directory
+            playlist_dir = self.download_dir / "playlists"
+            playlist_dir.mkdir(parents=True, exist_ok=True)
+            
+            ydl_opts = self._get_base_ydl_opts()
+            ydl_opts.update({
+                'outtmpl': str(playlist_dir / '%(playlist_index)02d - %(title)s [%(id)s].%(ext)s'),
+                'playliststart': start_index,
+            })
+            
+            if end_index:
+                ydl_opts['playlistend'] = end_index
+            elif max_downloads:
+                ydl_opts['playlistend'] = start_index + max_downloads - 1
+            
+            if audio_only:
+                ydl_opts.update({
+                    'format': 'bestaudio/best',
+                    'extractaudio': True,
+                    'audioformat': 'mp3',
+                    'outtmpl': str(playlist_dir / 'audio/%(playlist_index)02d - %(title)s [%(id)s].%(ext)s'),
+                })
+            
+            downloaded_files = []
+            success_count = 0
+            error_count = 0
+            
+            def download_hook(d):
+                if d['status'] == 'finished':
+                    downloaded_files.append(d['filename'])
+                    nonlocal success_count
+                    success_count += 1
+                elif d['status'] == 'error':
+                    nonlocal error_count
+                    error_count += 1
+            
+            ydl_opts['progress_hooks'] = [download_hook]
+            
+            def download_playlist():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+            
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, download_playlist)
+            
+            return DownloadResponse(
+                status="success",
+                message=f"Playlist download completed: {success_count} successful, {error_count} failed",
+                download_type="playlist",
+                files_downloaded=downloaded_files,
+                total_files=success_count + error_count,
+                success_count=success_count,
+                error_count=error_count
+            )
+            
+        except Exception as e:
+            logger.error(f"Error downloading playlist: {str(e)}")
+            return DownloadResponse(
+                status="error",
+                message=f"Playlist download failed: {str(e)}"
+            )
+    
+    async def batch_download(self, urls: List[str], format_preference: str = "best",
+                           audio_only: bool = False, max_concurrent: int = 3) -> DownloadResponse:
+        """
+        Download multiple videos concurrently
+        """
+        try:
+            # Create batch directory
+            batch_dir = self.download_dir / "batch"
+            batch_dir.mkdir(parents=True, exist_ok=True)
+            
+            downloaded_files = []
+            success_count = 0
+            error_count = 0
+            
+            semaphore = asyncio.Semaphore(max_concurrent)
+            
+            async def download_single(url: str) -> bool:
+                async with semaphore:
+                    try:
+                        ydl_opts = self._get_base_ydl_opts()
+                        ydl_opts.update({
+                            'format': format_preference,
+                            'outtmpl': str(batch_dir / '%(title)s [%(id)s].%(ext)s'),
+                        })
+                        
+                        if audio_only:
+                            ydl_opts.update({
+                                'format': 'bestaudio/best',
+                                'extractaudio': True,
+                                'audioformat': 'mp3',
+                                'outtmpl': str(batch_dir / 'audio/%(title)s [%(id)s].%(ext)s'),
+                            })
+                        
+                        def download_single_hook(d):
+                            if d['status'] == 'finished':
+                                downloaded_files.append(d['filename'])
+                        
+                        ydl_opts['progress_hooks'] = [download_single_hook]
+                        
+                        def download_video():
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                ydl.download([url])
+                        
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, download_video)
+                        return True
+                        
+                    except Exception as e:
+                        logger.error(f"Error downloading {url}: {str(e)}")
+                        return False
+            
+            # Process all URLs concurrently
+            tasks = [download_single(url) for url in urls]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in results:
+                if result is True:
+                    success_count += 1
+                else:
+                    error_count += 1
+            
+            return DownloadResponse(
+                status="success",
+                message=f"Batch download completed: {success_count} successful, {error_count} failed",
+                download_type="batch",
+                files_downloaded=downloaded_files,
+                total_files=len(urls),
+                success_count=success_count,
+                error_count=error_count
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in batch download: {str(e)}")
+            return DownloadResponse(
+                status="error",
+                message=f"Batch download failed: {str(e)}"
             )
 
 # Global service instance

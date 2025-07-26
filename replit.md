@@ -8,6 +8,11 @@ This is a FastAPI-based video downloader service that implements a two-phase app
 
 Preferred communication style: Simple, everyday language.
 
+### Recent Request (July 26, 2025)
+- Enhanced Twitter/X support to handle posts without videos
+- Show appropriate responses for posts with images or no media
+- Display media type badges and handle different content types
+
 ## System Architecture
 
 ### Backend Framework

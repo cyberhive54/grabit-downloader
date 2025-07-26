@@ -14,12 +14,12 @@ router = APIRouter()
 @router.post("/extract/twitter", response_model=ExtractResponse)
 async def extract_twitter_metadata(request: ExtractRequest):
     """
-    Extract Twitter video metadata without downloading
+    Extract Twitter/X post metadata, handles posts with videos, images, or no media
     """
     logger.info(f"Extracting Twitter metadata for: {request.url}")
     
     try:
-        response = await downloader_service.extract_metadata(str(request.url))
+        response = await downloader_service.extract_twitter_metadata(str(request.url))
         
         if response.status == "error":
             raise HTTPException(status_code=400, detail=response.message)

@@ -92,7 +92,9 @@ class VideoDownloaderService:
                 like_count=info.get('like_count'),
                 thumbnail=info.get('thumbnail'),
                 webpage_url=info.get('webpage_url', url),
-                formats=formats
+                formats=formats,
+                media_type="video" if formats else "none",
+                has_media=bool(formats)
             )
             
             return ExtractResponse(
@@ -109,6 +111,144 @@ class VideoDownloaderService:
             )
         except Exception as e:
             logger.error(f"Unexpected error extracting metadata for {url}: {str(e)}")
+            return ExtractResponse(
+                status="error",
+                message=f"Unexpected error: {str(e)}"
+            )
+    
+    async def extract_twitter_metadata(self, url: str) -> ExtractResponse:
+        """
+        Extract Twitter/X post metadata, handling posts with videos, images, or no media
+        """
+        try:
+            ydl_opts = self._get_base_ydl_opts()
+            ydl_opts['extract_flat'] = False
+            ydl_opts['writeinfojson'] = True
+            ydl_opts['skip_download'] = True
+            
+            def extract_info():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    try:
+                        # Try to extract video info first
+                        return ydl.extract_info(url, download=False)
+                    except yt_dlp.DownloadError as e:
+                        if "No video could be found" in str(e):
+                            # Try to extract general post info using different approach
+                            ydl_opts_general = ydl_opts.copy()
+                            ydl_opts_general['ignoreerrors'] = True
+                            try:
+                                # Try to get tweet info even without video
+                                import requests
+                                from urllib.parse import urlparse
+                                
+                                # Extract tweet ID from URL
+                                path_parts = urlparse(url).path.split('/')
+                                tweet_id = None
+                                for i, part in enumerate(path_parts):
+                                    if part == 'status' and i + 1 < len(path_parts):
+                                        tweet_id = path_parts[i + 1].split('?')[0]
+                                        break
+                                
+                                if tweet_id:
+                                    # Return basic structure for posts without video
+                                    return {
+                                        'id': tweet_id,
+                                        'title': f'Twitter Post {tweet_id}',
+                                        'webpage_url': url,
+                                        'extractor': 'twitter',
+                                        'formats': [],
+                                        '_type': 'url',
+                                        'description': 'This post contains no video content'
+                                    }
+                            except:
+                                pass
+                        raise e
+            
+            # Run in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, extract_info)
+            
+            if not info:
+                return ExtractResponse(
+                    status="error",
+                    message="Could not extract post information"
+                )
+            
+            # Process formats (if any)
+            formats = []
+            media_type = "none"
+            images = []
+            
+            # Check for video formats
+            for fmt in info.get('formats', []):
+                if fmt.get('format_id') and fmt.get('ext'):
+                    video_format = VideoFormat(
+                        format_id=fmt.get('format_id', ''),
+                        format_note=fmt.get('format_note'),
+                        ext=fmt.get('ext', 'unknown'),
+                        resolution=fmt.get('resolution'),
+                        height=fmt.get('height'),
+                        width=fmt.get('width'),
+                        fps=fmt.get('fps'),
+                        vcodec=fmt.get('vcodec'),
+                        acodec=fmt.get('acodec'),
+                        filesize=fmt.get('filesize'),
+                        filesize_approx=fmt.get('filesize_approx'),
+                        tbr=fmt.get('tbr'),
+                        vbr=fmt.get('vbr'),
+                        abr=fmt.get('abr'),
+                        quality=fmt.get('quality')
+                    )
+                    formats.append(video_format)
+                    media_type = "video"
+            
+            # Check for images
+            thumbnails = info.get('thumbnails', [])
+            if thumbnails:
+                images = [thumb.get('url') for thumb in thumbnails if thumb.get('url')]
+                if images and media_type == "none":
+                    media_type = "image"
+            
+            # Determine appropriate message
+            if media_type == "video":
+                message = "Video metadata extracted successfully"
+            elif media_type == "image":
+                message = "Post contains images (no video content)"
+            else:
+                message = "Post contains no media content"
+            
+            # Create metadata object
+            metadata = VideoMetadata(
+                id=info.get('id', ''),
+                title=info.get('title', 'Twitter Post'),
+                description=info.get('description', 'Twitter/X post'),
+                uploader=info.get('uploader'),
+                upload_date=info.get('upload_date'),
+                duration=info.get('duration'),
+                view_count=info.get('view_count'),
+                like_count=info.get('like_count'),
+                thumbnail=info.get('thumbnail'),
+                webpage_url=info.get('webpage_url', url),
+                formats=formats,
+                media_type=media_type,
+                images=images if images else None,
+                has_media=bool(formats or images)
+            )
+            
+            return ExtractResponse(
+                status="ok",
+                metadata=metadata,
+                message=message
+            )
+            
+        except yt_dlp.DownloadError as e:
+            logger.error(f"yt-dlp download error for {url}: {str(e)}")
+            return ExtractResponse(
+                status="error",
+                message=f"Could not extract post information: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error extracting Twitter metadata for {url}: {str(e)}")
             return ExtractResponse(
                 status="error",
                 message=f"Unexpected error: {str(e)}"

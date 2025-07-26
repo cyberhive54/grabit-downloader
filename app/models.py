@@ -44,7 +44,10 @@ class VideoMetadata(BaseModel):
     like_count: Optional[int] = Field(None, description="Like count")
     thumbnail: Optional[str] = Field(None, description="Thumbnail URL")
     webpage_url: str = Field(..., description="Original webpage URL")
-    formats: List[VideoFormat] = Field(..., description="Available video formats")
+    formats: List[VideoFormat] = Field(default_factory=list, description="Available video formats")
+    media_type: Optional[str] = Field(None, description="Type of media: 'video', 'image', 'none'")
+    images: Optional[List[str]] = Field(None, description="List of image URLs if post contains images")
+    has_media: bool = Field(True, description="Whether the post contains any media")
 
 class ExtractResponse(BaseModel):
     """Response model for metadata extraction"""

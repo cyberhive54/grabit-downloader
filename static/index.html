@@ -276,22 +276,52 @@ curl -X POST "http://localhost:8000/api/download/youtube" \
             const fileSize = metadata.formats && metadata.formats.length > 0 ? 
                 formatFileSize(metadata.formats[0].filesize || metadata.formats[0].filesize_approx) : 'Unknown';
             
+            // Handle different media types
+            let mediaTypeDisplay = '';
+            let mediaContent = '';
+            
+            if (metadata.media_type === 'video') {
+                mediaTypeDisplay = `<span class="badge bg-success">Video Content</span>`;
+                mediaContent = metadata.thumbnail ? `
+                    <div class="thumbnail-container">
+                        <img src="${metadata.thumbnail}" alt="Video thumbnail" class="img-fluid">
+                    </div>
+                ` : '';
+            } else if (metadata.media_type === 'image') {
+                mediaTypeDisplay = `<span class="badge bg-info">Image Content</span>`;
+                if (metadata.images && metadata.images.length > 0) {
+                    mediaContent = `
+                        <div class="thumbnail-container">
+                            <h6>Images in this post:</h6>
+                            ${metadata.images.map((img, idx) => `
+                                <img src="${img}" alt="Post image ${idx + 1}" class="img-fluid mb-2" style="max-height: 150px; margin-right: 10px;">
+                            `).join('')}
+                        </div>
+                    `;
+                }
+            } else {
+                mediaTypeDisplay = `<span class="badge bg-warning">No Media Content</span>`;
+                mediaContent = `
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> This post contains no video or image content.
+                    </div>
+                `;
+            }
+            
             container.innerHTML = `
                 <div class="row">
                     <div class="col-md-3">
-                        ${metadata.thumbnail ? `
-                            <div class="thumbnail-container">
-                                <img src="${metadata.thumbnail}" alt="Video thumbnail" class="img-fluid">
-                            </div>
-                        ` : ''}
+                        ${mediaContent}
                     </div>
                     <div class="col-md-9">
-                        <h5>${metadata.title}</h5>
+                        <h5>${metadata.title} ${mediaTypeDisplay}</h5>
                         ${metadata.uploader ? `<p><strong>Uploader:</strong> ${metadata.uploader}</p>` : ''}
                         ${metadata.duration ? `<p><strong>Duration:</strong> ${duration}</p>` : ''}
                         ${metadata.view_count ? `<p><strong>Views:</strong> ${metadata.view_count.toLocaleString()}</p>` : ''}
                         ${metadata.upload_date ? `<p><strong>Upload Date:</strong> ${formatDate(metadata.upload_date)}</p>` : ''}
-                        <p><strong>Available Formats:</strong> ${metadata.formats.length}</p>
+                        <p><strong>Media Type:</strong> ${metadata.media_type || 'Unknown'}</p>
+                        ${metadata.formats ? `<p><strong>Available Formats:</strong> ${metadata.formats.length}</p>` : ''}
+                        ${metadata.description ? `<p><strong>Description:</strong> ${metadata.description}</p>` : ''}
                     </div>
                 </div>
             `;
@@ -302,6 +332,22 @@ curl -X POST "http://localhost:8000/api/download/youtube" \
         function displayFormats(formats) {
             const container = document.getElementById('formatsList');
             container.innerHTML = '';
+            
+            // Check if there are any video formats available
+            if (!formats || formats.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> No video formats available for download. 
+                        This post may contain only images or no media content.
+                    </div>
+                `;
+                document.getElementById('downloadContainer').style.display = 'block';
+                document.getElementById('downloadBtn').style.display = 'none';
+                return;
+            }
+            
+            // Show download button for video content
+            document.getElementById('downloadBtn').style.display = 'block';
             
             // Group and sort formats
             const sortedFormats = formats

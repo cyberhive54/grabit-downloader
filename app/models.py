@@ -30,7 +30,7 @@ class VideoFormat(BaseModel):
     tbr: Optional[float] = Field(None, description="Total bitrate")
     vbr: Optional[float] = Field(None, description="Video bitrate")
     abr: Optional[float] = Field(None, description="Audio bitrate")
-    quality: Optional[int] = Field(None, description="Quality rating")
+    quality: Optional[float] = Field(None, description="Quality rating")
 
 class VideoMetadata(BaseModel):
     """Complete video metadata"""
